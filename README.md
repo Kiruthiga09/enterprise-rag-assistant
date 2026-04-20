@@ -28,7 +28,7 @@ requirements.txt
 
 1. Clone the repository:
 ```
-git clone <your-repo-link>
+git clone https://github.com/Kiruthiga09/Enterprise_Knowledge_Assistant
 cd <repo-folder>
 ```
 
@@ -58,4 +58,4 @@ streamlit run app.py
 - Support for other file formats
 
 ## 👨‍💻 Author
-Your Name
+Kiruthiga K
