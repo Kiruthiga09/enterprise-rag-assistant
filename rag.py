@@ -1,11 +1,11 @@
 import os
+import tempfile
 import fitz  # PyMuPDF
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
 
 
 # ------------------- PROCESS PDF -------------------
@@ -45,7 +45,6 @@ def process_pdf(pdf_files):
         model="models/gemini-embedding-001"
     )
 
-    # 🔥 ADDED ERROR HANDLING HERE (embedding)
     try:
         vector_store = FAISS.from_documents(chunks, embeddings)
     except Exception as e:
@@ -60,7 +59,7 @@ def process_pdf(pdf_files):
 # ------------------- CREATE RAG -------------------
 def create_rag_chain(vector_store):
     llm = ChatGoogleGenerativeAI(
-        model="models/gemini-flash-latest",
+        model="models/gemini-flash-latest",  
         temperature=0.2
     )
 
@@ -81,14 +80,8 @@ def create_rag_chain(vector_store):
 
     retriever = vector_store.as_retriever(search_kwargs={"k": 6})
 
-    def format_docs(docs):
-        return "\n\n".join(doc.page_content for doc in docs)
-
-    chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        | prompt
-        | llm
-    )
+   
+    chain = prompt | llm
 
     return chain, retriever
 
@@ -97,15 +90,18 @@ def create_rag_chain(vector_store):
 def get_answer(chain, retriever, query, selected_file=None):
     docs = retriever.invoke(query)
 
+   
     if selected_file:
         docs = [d for d in docs if d.metadata.get("source") == selected_file]
 
     if not docs:
         return "Not available in selected document.", []
 
-    # 🔥 ADDED ERROR HANDLING
+  
+    context = "\n\n".join([d.page_content for d in docs])
+
     try:
-        response = chain.invoke(query)
+        response = chain.invoke({"context": context, "question": query})
     except Exception as e:
         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
             return "⚠️ API limit reached. Please wait and try again.", []
@@ -128,30 +124,32 @@ def get_answer(chain, retriever, query, selected_file=None):
     return answer, sources
 
 
-#---------------------summary---------------------
+# ------------------- SUMMARY -------------------
 def summarize_document(vector_store, selected_file=None):
     llm = ChatGoogleGenerativeAI(
-        model="models/gemini-flash-latest",
+        model="models/gemini-flash-latest",  
         temperature=0.2
     )
-
-    docs = list(vector_store.docstore._dict.values())
-
+ 
+    
+    docs = vector_store.similarity_search("summary overview introduction", k=20)
+ 
     if selected_file:
         docs = [d for d in docs if d.metadata.get("source") == selected_file]
-
+ 
     if not docs:
         return "⚠️ No content available for selected document."
-
+ 
     text = "\n\n".join([doc.page_content for doc in docs[:20]])
-
+ 
     prompt = f"""
-    Summarize the following document clearly in bullet points:
-
+    Summarize the following document in clear, plain sentences.
+    Do NOT use bullet points, dashes, asterisks, bold, headers, or any special symbols.
+    Write in simple paragraph form only.
+ 
     {text}
     """
-
-    # 🔥 ADDED ERROR HANDLING
+ 
     try:
         response = llm.invoke(prompt)
     except Exception as e:
@@ -159,7 +157,7 @@ def summarize_document(vector_store, selected_file=None):
             return "⚠️ API limit reached. Please wait and try again."
         else:
             return f"⚠️ Error: {str(e)}"
-
+ 
     try:
         if isinstance(response.content, list):
             return response.content[0]["text"]
