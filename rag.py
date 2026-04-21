@@ -45,7 +45,14 @@ def process_pdf(pdf_files):
         model="models/gemini-embedding-001"
     )
 
-    vector_store = FAISS.from_documents(chunks, embeddings)
+    # 🔥 ADDED ERROR HANDLING HERE (embedding)
+    try:
+        vector_store = FAISS.from_documents(chunks, embeddings)
+    except Exception as e:
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            raise ValueError("⚠️ Embedding API limit reached. Please wait and try again.")
+        else:
+            raise ValueError(f"⚠️ Error: {str(e)}")
 
     return vector_store, skipped_files
 
